@@ -1,34 +1,60 @@
+# Verbose for debugging. Drop to 1 once stable.
 log_level: 2
 
+# Matching method: sequential | vocab_tree | exhaustive
+# - sequential: best default for drone video (with high overlap + loop detection)
+# - vocab_tree: often higher global connectivity; requires vocab_tree_path
+# - exhaustive: max pairs but O(N^2) (use only for small image sets)
+matching_method: sequential
+
 colmap:
+  # Drone/aerial: simpler camera models are often more stable
   camera_model: "SIMPLE_RADIAL"
+
+  # Video often has stabilization/crop => intrinsics can vary per-frame
   single_camera: false
+
   use_gpu: true
   gpu_index: 0
 
 sift:
   extraction_use_gpu: true
   matching_use_gpu: true
+
+  # Aerial scenes need many keypoints (texture can be small/far)
   max_num_features: 8192
   peak_threshold: 0.006
   edge_threshold: 10
 
+# For sequential matcher: increase overlap to maximize pair connectivity.
+# 60 is aggressive but often effective for aerial video.
 sequential_matcher:
-  overlap: 40
+  overlap: 60
   loop_detection: true
 
-mapper:
-  min_num_matches: 12
-  init_min_num_inliers: 50
-  ba_refine_focal_length: true
-  ba_refine_principal_point: false
-  ba_refine_extra_params: false
-  multiple_models: true
-  ba_global_function_tolerance: 1.0e-6
-
-
+# Matching quality knobs
 sift_matching:
   max_ratio: 0.8
   cross_check: true
   guided_matching: true
 
+mapper:
+  # Encourage registering more images
+  min_num_matches: 12
+  init_min_num_inliers: 50
+
+  # Conservative refinement to avoid intrinsics instability
+  ba_refine_focal_length: true
+  ba_refine_principal_point: false
+  ba_refine_extra_params: false
+
+  # Allows multiple partial models (can increase total registered images)
+  multiple_models: true
+
+  ba_global_function_tolerance: 1.0e-6
+
+# Optional: vocab tree matching (global connectivity).
+# You must supply vocab_tree_path for matching_method=vocab_tree.
+vocab_tree_matcher:
+  # vocab_tree_path: "D:/Tools/COLMAP/vocab_tree_flickr100K_words256K.bin"
+  num_images: 50

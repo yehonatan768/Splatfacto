@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from src.utils.shell import run
 
 
-def _ns_images_help_has(flag: str) -> bool:
+def _ns_images_help() -> str:
     p = subprocess.run(
         ["ns-process-data", "images", "--help"],
         stdout=subprocess.PIPE,
@@ -16,7 +16,11 @@ def _ns_images_help_has(flag: str) -> bool:
         text=True,
         check=False,
     )
-    return flag in (p.stdout or "")
+    return p.stdout or ""
+
+
+def _ns_has(flag: str) -> bool:
+    return flag in _ns_images_help()
 
 
 def process_images(
@@ -25,10 +29,15 @@ def process_images(
     cfg: Dict[str, Any],
     logger=None,
 ) -> None:
+    """
+    Nerfstudio ns-process-data wrapper tuned for aerial/drone troubleshooting:
+      - Default num_downscales=0 (do not throw away small texture)
+      - Uses matching_method if the installed CLI supports it
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
 
     ns_cfg = cfg.get("ns_process", cfg)
-    num_downscales = int(ns_cfg.get("num_downscales", 3))
+    num_downscales = int(ns_cfg.get("num_downscales", 0))  # IMPORTANT: default 0
     matching_method = str(ns_cfg.get("matching_method", "sequential")).strip().lower()
 
     cmd: List[str] = [
@@ -38,11 +47,11 @@ def process_images(
         "--num-downscales", str(num_downscales),
     ]
 
-    # Avoid vocab_tree (FAISS/FLANN mismatch)
-    if _ns_images_help_has("--matching-method"):
+    # matching-method is supported in many versions
+    if _ns_has("--matching-method"):
         cmd += ["--matching-method", matching_method]
 
-    # Windows-safe: force UTF-8 + disable Rich (prevents emoji crashes)
+    # Windows-safe: force UTF-8 + disable Rich (prevents emoji/encoding issues)
     env = dict(os.environ)
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
