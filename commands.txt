@@ -1,0 +1,31 @@
+ffmpeg -version
+ffprobe -version
+
+colmap -h
+
+py -3.10 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+
+
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+pip install -r requirements.txt
+
+
+ns-process-data --help
+ns-train --help
+ns-export --help
+
+
+python -c "import torch; print('torch:', torch.__version__); print('cuda available:', torch.cuda.is_available()); print('device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)"
+
+
+python -m src.cli extract --video dji0004.mp4 --ver v0001
+python -m src.cli sfm --exp dji0004 --ver v0001
+python -m src.cli ns --exp dji0004 --ver v0001
+python -m src.cli train --exp dji0004 --ver v0001
+python -m src.cli train --exp dji0004 --ver v0001
+python -m src.cli export-splat --exp dji0004 --ver v0001
+python -m src.cli export-splat --exp dji0004 --ver v0001
+python -m src.cli export-pc --exp dji0004 --ver v0001

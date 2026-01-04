@@ -1,0 +1,3 @@
+ns_process:
+  num_downscales: 3
+  matching_method: sequential   # sequential | exhaustive

@@ -1,0 +1,8 @@
+export:
+  splat_filename: "splat.ply"
+  ply_color_mode: "rgb"
+
+pointcloud:
+  dense: false
+  max_image_size: 2000
+  use_gpu: true

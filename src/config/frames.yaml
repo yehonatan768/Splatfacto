@@ -1,0 +1,35 @@
+frames:
+  target: 400
+  max_width: 2048
+  min_dt_sec: 0.12
+  candidate_mult: 3.0
+
+ffmpeg:
+  keep_candidates: false
+  min_candidate_fps: 0.5
+  max_candidate_fps: 12.0
+
+quality:
+  blur_laplacian_thresh: 120.0
+  # Tenengrad helps catch directional blur; set 0 to disable
+  tenengrad_thresh: 0.0
+
+  v_mean_min: 35.0
+  v_mean_max: 220.0
+  exposure_robust_z: 2.5
+
+  # exposure smoothness; reject abrupt auto-exposure jumps
+  max_exposure_step: 18.0
+
+dedup:
+  # smaller = stricter dedup, larger = keep more similar frames
+  phash_hamming_max: 10
+  hash_size: 8
+  highfreq_factor: 4
+
+motion:
+  # reject “hover duplicates”; increase if too many near-identical frames remain
+  min_frame_diff: 4.0
+
+save:
+  jpg_quality: 95

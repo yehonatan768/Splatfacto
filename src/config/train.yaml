@@ -1,0 +1,7 @@
+train:
+  method: "splatfacto"
+  max_num_iterations: 30000
+  quit_on_completion: true
+
+model_tweaks:
+  use_scale_regularization: true

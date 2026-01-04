@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.dist/
+.build/
+.venv/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Experiments / outputs (large artifacts)
+experiments/
+outputs/
+wandb/
+runs/
+logs/
+
+# Data caches
+*.cache
+.cache/
+tmp/
+temp/
+
+# Video / frames (optional: keep videos tracked if you want)
+videos/*.mp4
+videos/*.mov
+videos/*.mkv

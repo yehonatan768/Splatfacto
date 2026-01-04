@@ -1,0 +1,13 @@
+project:
+  videos_dir: "videos"
+  experiments_dir: "experiments"
+
+experiments:
+  data_dir: "data"
+  recon_dir: "reconstruction"
+  splats_dir: "splats"
+
+naming:
+  exp_prefix: "exp"
+  version_prefix: "v"
+  version_digits: 4
