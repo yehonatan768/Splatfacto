@@ -1,0 +1,14 @@
+# Convert COLMAP -> Nerfstudio dataset (transforms.json)
+convert:
+  hardlink_images: true     # no duplication if same drive supports hardlinks
+  auto_orient_up: true      # helpful for aerial sequences
+  auto_center: true
+  auto_scale: true
+  target_radius: 1.0        # scale camera centers to this radius
+  sort_by_name: true
+
+# Coordinate convention:
+# - COLMAP produces camera-to-world in a COLMAP/OPENCV-style axis convention.
+# - This converter outputs Nerfstudio/OpenGL-friendly transforms.json.
+coords:
+  opencv_to_opengl: true

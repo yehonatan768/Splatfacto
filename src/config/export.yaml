@@ -1,8 +1,10 @@
 export:
-  splat_filename: "splat.ply"
-  ply_color_mode: "rgb"
+  gaussian_splat: true
+  point_cloud: true
 
-pointcloud:
-  dense: false
-  max_image_size: 2000
-  use_gpu: true
+  # Extra args appended to ns-export commands
+  splat_extra_args: []
+  pointcloud_extra_args: []
+
+  # If empty, exporter auto-detects the latest Nerfstudio run folder under outputs/
+  run_dir: ""

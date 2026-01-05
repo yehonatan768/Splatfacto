@@ -1,4 +1,0 @@
-ns_process:
-  num_downscales: 0
-  matching_method: sequential
-

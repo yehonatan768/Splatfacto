@@ -1,7 +1,6 @@
 train:
   method: "splatfacto"
-  max_num_iterations: 30000
-  quit_on_completion: true
-
-model_tweaks:
-  use_scale_regularization: true
+  # Extra args appended to ns-train
+  extra_args: []
+  # Example extra args:
+  # extra_args: ["--max-num-iterations", "30000"]

@@ -1,38 +1,51 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any
 
 
 @dataclass(frozen=True)
-class ProjectPaths:
-    root: Path
-    videos: Path
-    experiments: Path
-    exp_data: Path
-    exp_recon: Path
-    exp_splats: Path
+class RunPaths:
+    project_root: Path
+    exp: str
+    ver: str
 
+    @property
+    def exp_root(self) -> Path:
+        return self.project_root / "experiments" / self.exp / self.ver
 
-def resolve_paths(cfg_paths: Dict[str, Any]) -> ProjectPaths:
-    root = Path(__file__).resolve().parents[2]  # .../project
-    videos = root / cfg_paths["project"]["videos_dir"]
-    exps = root / cfg_paths["project"]["experiments_dir"]
+    @property
+    def frames_dir(self) -> Path:
+        return self.exp_root / "frames"
 
-    data_dir = exps / cfg_paths["experiments"]["data_dir"]
-    recon_dir = exps / cfg_paths["experiments"]["recon_dir"]
-    splats_dir = exps / cfg_paths["experiments"]["splats_dir"]
+    @property
+    def frames_candidates_dir(self) -> Path:
+        return self.frames_dir / "_candidates"
 
-    return ProjectPaths(
-        root=root,
-        videos=videos,
-        experiments=exps,
-        exp_data=data_dir,
-        exp_recon=recon_dir,
-        exp_splats=splats_dir,
-    )
+    @property
+    def colmap_dir(self) -> Path:
+        return self.exp_root / "colmap"
 
+    @property
+    def colmap_db(self) -> Path:
+        return self.colmap_dir / "database.db"
 
-def ensure_dirs(*paths: Path) -> None:
-    for p in paths:
-        p.mkdir(parents=True, exist_ok=True)
+    @property
+    def colmap_sparse0(self) -> Path:
+        return self.colmap_dir / "sparse" / "0"
+
+    @property
+    def ns_data_dir(self) -> Path:
+        return self.exp_root / "ns_data"
+
+    @property
+    def outputs_dir(self) -> Path:
+        return self.exp_root / "outputs"
+
+    @property
+    def exports_dir(self) -> Path:
+        return self.exp_root / "exports"
+
+    @property
+    def run_logs_dir(self) -> Path:
+        return self.exp_root / "logs"

@@ -1,136 +1,175 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, Optional
 
-from src.utils.cfg import load_all_configs
-from src.utils.paths import resolve_paths, ensure_dirs
-from src.utils.exp import slugify_video_name
-from src.utils.log import get_logger, stage
+from src.utils.logger import build_logger, LogConfig
+from src.utils.paths import RunPaths
+from src.utils.yamlio import read_yaml, deep_merge
 
-from src.utils.step_paths import build_step_paths, ensure_only
-
-from src.video_to_frame.extract import extract_frames
-from src.colmap.sfm import run_sfm
-from src.process_data.ns_process import process_images
-from src.train.splat import train_splat
-from src.export.splat import export_splat
-from src.export.pointcloud import export_colmap_pointcloud
+from src.pipeline.extract_frames import FfmpegConfig, SmartSelectConfig, extract_frames, smart_select
+from src.pipeline.sfm_colmap import run_sfm
+from src.pipeline.ns_dataset import NsDatasetConfig, build_ns_dataset
+from src.pipeline.train import TrainConfig, train_splatfacto
+from src.pipeline.export import ExportConfig, export_outputs
 
 
-def _base(cfg_dir: Path):
-    cfgs = load_all_configs(cfg_dir)
-    P = resolve_paths(cfgs["paths"])
-    ensure_dirs(P.videos, P.experiments, P.exp_data, P.exp_recon, P.exp_splats)
-    return cfgs, P
+def _project_root() -> Path:
+    # Assume running from repo root; fall back to cwd.
+    return Path.cwd()
 
 
-def _logger_for(P, exp: str, ver: str):
-    # one log file per exp/version regardless of step
-    log_file = P.exp_splats / exp / ver / "run.log"
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    return get_logger(f"{exp}/{ver}", log_file=log_file)
+def _load_cfgs() -> Dict[str, Dict[str, Any]]:
+    cfg_dir = Path(__file__).parent / "config"
+    return {
+        "extract": read_yaml(cfg_dir / "extract.yaml"),
+        "colmap": read_yaml(cfg_dir / "colmap.yaml"),
+        "ns_dataset": read_yaml(cfg_dir / "ns_dataset.yaml"),
+        "train": read_yaml(cfg_dir / "train.yaml"),
+        "export": read_yaml(cfg_dir / "export.yaml"),
+    }
+
+
+def cmd_extract(P: RunPaths, cfgs: Dict[str, Dict[str, Any]], video: Path, *, logger):
+    ex = cfgs["extract"]
+    ff = ex.get("ffmpeg", {})
+    ss = ex.get("smart_select", {})
+
+    # 1) ffmpeg extraction into _candidates
+    extract_frames(
+        video_path=video,
+        frames_dir=P.frames_dir,
+        candidates_dir=P.frames_candidates_dir,
+        ff=FfmpegConfig(
+            fps=float(ff.get("fps", 3.0)),
+            scale_max_width=int(ff.get("scale_max_width", 2048)),
+            quality_qv=int(ff.get("quality_qv", 2)),
+            loglevel=str(ff.get("loglevel", "info")),
+        ),
+        logger=logger,
+    )
+
+    # 2) smart selection into frames/
+    if bool(ss.get("enabled", True)):
+        smart_select(
+            candidates_dir=P.frames_candidates_dir,
+            frames_dir=P.frames_dir,
+            cfg=SmartSelectConfig(
+                enabled=True,
+                max_frames=int(ss.get("max_frames", 600)),
+                min_sharpness=float(ss.get("min_sharpness", 10.0)),
+                keep_every_n_after_filter=int(ss.get("keep_every_n_after_filter", 1)),
+                min_hist_delta=float(ss.get("min_hist_delta", 0.012)),
+            ),
+            logger=logger,
+        )
+
+
+def cmd_process(P: RunPaths, cfgs: Dict[str, Dict[str, Any]], *, logger):
+    # 1) Run your COLMAP SfM
+    sparse0 = run_sfm(P.frames_dir, P.colmap_dir, cfgs["colmap"], logger=logger)
+
+    # 2) Convert COLMAP -> Nerfstudio dataset (no ns-process-data)
+    ns_cfg = cfgs["ns_dataset"]
+    conv = ns_cfg.get("convert", {})
+    coords = ns_cfg.get("coords", {})
+
+    build_ns_dataset(
+        frames_dir=P.frames_dir,
+        colmap_sparse0=sparse0,
+        ns_data_dir=P.ns_data_dir,
+        cfg=NsDatasetConfig(
+            hardlink_images=bool(conv.get("hardlink_images", True)),
+            auto_orient_up=bool(conv.get("auto_orient_up", True)),
+            auto_center=bool(conv.get("auto_center", True)),
+            auto_scale=bool(conv.get("auto_scale", True)),
+            target_radius=float(conv.get("target_radius", 1.0)),
+            sort_by_name=bool(conv.get("sort_by_name", True)),
+            opencv_to_opengl=bool(coords.get("opencv_to_opengl", True)),
+        ),
+        logger=logger,
+    )
+
+
+def cmd_train(P: RunPaths, cfgs: Dict[str, Dict[str, Any]], *, logger):
+    tr = cfgs["train"].get("train", {})
+    extra = tr.get("extra_args", []) or []
+    train_splatfacto(
+        ns_data_dir=P.ns_data_dir,
+        outputs_dir=P.outputs_dir,
+        cfg=TrainConfig(method=str(tr.get("method", "splatfacto")), extra_args=list(extra)),
+        logger=logger,
+    )
+
+
+def cmd_export(P: RunPaths, cfgs: Dict[str, Dict[str, Any]], *, logger):
+    ex = cfgs["export"].get("export", {})
+    export_outputs(
+        outputs_dir=P.outputs_dir,
+        exports_dir=P.exports_dir,
+        cfg=ExportConfig(
+            gaussian_splat=bool(ex.get("gaussian_splat", True)),
+            point_cloud=bool(ex.get("point_cloud", True)),
+            splat_extra_args=list(ex.get("splat_extra_args", []) or []),
+            pointcloud_extra_args=list(ex.get("pointcloud_extra_args", []) or []),
+            run_dir=str(ex.get("run_dir", "") or ""),
+        ),
+        logger=logger,
+    )
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="splat-pipeline", description="Run steps individually")
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    ap = argparse.ArgumentParser(description="Splatfacto aerial pipeline (FFmpeg + COLMAP + NS dataset + train + export)")
+    ap.add_argument("--exp", required=True, help="experiment name (e.g., dji0004)")
+    ap.add_argument("--ver", required=True, help="version (e.g., v0001)")
+    ap.add_argument("--project-root", default="", help="optional project root (default: cwd)")
+    ap.add_argument("--log-level", default="INFO", help="DEBUG|INFO|WARNING|ERROR")
+    sub = ap.add_subparsers(dest="cmd", required=True)
 
-    # extract
-    p = sub.add_parser("extract", help="Video -> frames")
-    p.add_argument("--video", required=True, help="Video filename inside videos/ OR full path")
-    p.add_argument("--exp", default="", help="Experiment name (default: slug from video)")
-    p.add_argument("--ver", required=True, help="Version like v0001")
+    p_ex = sub.add_parser("extract", help="extract smart frames from video")
+    p_ex.add_argument("--video", required=True, help="video filename under videos/ or full path")
 
-    # sfm
-    p = sub.add_parser("sfm", help="Frames -> COLMAP sparse")
-    p.add_argument("--exp", required=True)
-    p.add_argument("--ver", required=True)
+    sub.add_parser("process", help="run COLMAP SfM + convert to Nerfstudio dataset")
+    sub.add_parser("train", help="train splatfacto on ns dataset")
+    sub.add_parser("export", help="export gaussian splat + pointcloud from latest run")
 
-    # ns-process
-    p = sub.add_parser("ns", help="Frames -> Nerfstudio dataset (transforms.json)")
-    p.add_argument("--exp", required=True)
-    p.add_argument("--ver", required=True)
+    p_all = sub.add_parser("all", help="run extract -> process -> train -> export")
+    p_all.add_argument("--video", required=True, help="video filename under videos/ or full path")
 
-    # train
-    p = sub.add_parser("train", help="Train splatfacto")
-    p.add_argument("--exp", required=True)
-    p.add_argument("--ver", required=True)
+    args = ap.parse_args()
 
-    # export splat
-    p = sub.add_parser("export-splat", help="Export splat PLY from trained run")
-    p.add_argument("--exp", required=True)
-    p.add_argument("--ver", required=True)
+    project_root = Path(args.project_root).resolve() if args.project_root else _project_root()
+    P = RunPaths(project_root=project_root, exp=args.exp, ver=args.ver)
 
-    # export point cloud
-    p = sub.add_parser("export-pc", help="Export COLMAP point cloud")
-    p.add_argument("--exp", required=True)
-    p.add_argument("--ver", required=True)
+    logger = build_logger(f"{args.exp}/{args.ver}", run_dir=P.run_logs_dir, cfg=LogConfig(level=args.log_level, to_file=True))
+    cfgs = _load_cfgs()
 
-    args = parser.parse_args()
-    cfg_dir = Path(__file__).resolve().parent / "config"
-    cfgs, P = _base(cfg_dir)
+    def resolve_video(v: str) -> Path:
+        p = Path(v)
+        if p.exists():
+            return p.resolve()
+        cand = project_root / "videos" / v
+        if cand.exists():
+            return cand.resolve()
+        raise FileNotFoundError(f"Video not found: {v} (or {cand})")
 
     if args.cmd == "extract":
-        # Resolve video path
-        vp = Path(args.video)
-        if not vp.is_file():
-            vp = P.videos / args.video
-        if not vp.exists():
-            raise FileNotFoundError(f"Video not found: {vp}")
-
-        exp = args.exp.strip() or slugify_video_name(vp.name)
-        ver = args.ver.strip()
-
-        D = build_step_paths(P.exp_data, P.exp_recon, P.exp_splats, exp, ver)
-        logger = _logger_for(P, exp, ver)
-
-        # Only create frames dir for this step
-        ensure_only(D.frames_dir)
-
-        with stage(logger, "STEP extract"):
-            extract_frames(vp, D.frames_dir, cfgs["frames"], logger=logger)
-        return
-
-    # All other steps: require exp/ver
-    exp = args.exp.strip()
-    ver = args.ver.strip()
-    D = build_step_paths(P.exp_data, P.exp_recon, P.exp_splats, exp, ver)
-    logger = _logger_for(P, exp, ver)
-
-    if args.cmd == "sfm":
-        ensure_only(D.colmap_dir)  # only output folder for sfm
-        with stage(logger, "STEP sfm"):
-            run_sfm(D.frames_dir, D.colmap_dir, cfgs["colmap"], logger=logger)
-        return
-
-    if args.cmd == "ns":
-        ensure_only(D.ns_data_dir)
-        with stage(logger, "STEP ns-process"):
-            process_images(D.frames_dir, D.ns_data_dir, cfgs["ns_process"], logger=logger)
-        return
-
-    if args.cmd == "train":
-        ensure_only(D.splats_dir)
-        with stage(logger, "STEP train"):
-            train_splat(D.ns_data_dir, D.splats_dir, cfgs["train"])
-        return
-
-    if args.cmd == "export-splat":
-        exports_dir = D.splats_dir / "exports"
-        ensure_only(exports_dir)
-        with stage(logger, "STEP export-splat"):
-            configs = list(D.splats_dir.rglob("config.yml"))
-            if not configs:
-                raise FileNotFoundError(f"No config.yml found under: {D.splats_dir} (train first)")
-            export_splat(configs[0], exports_dir, cfgs["export"])
-        return
-
-    if args.cmd == "export-pc":
-        ensure_only(D.colmap_dir)
-        with stage(logger, "STEP export-pointcloud"):
-            export_colmap_pointcloud(D.frames_dir, D.colmap_dir, cfgs["export"])
-        return
+        cmd_extract(P, cfgs, resolve_video(args.video), logger=logger)
+    elif args.cmd == "process":
+        cmd_process(P, cfgs, logger=logger)
+    elif args.cmd == "train":
+        cmd_train(P, cfgs, logger=logger)
+    elif args.cmd == "export":
+        cmd_export(P, cfgs, logger=logger)
+    elif args.cmd == "all":
+        cmd_extract(P, cfgs, resolve_video(args.video), logger=logger)
+        cmd_process(P, cfgs, logger=logger)
+        cmd_train(P, cfgs, logger=logger)
+        cmd_export(P, cfgs, logger=logger)
+    else:
+        raise SystemExit("Unknown command")
 
 
 if __name__ == "__main__":

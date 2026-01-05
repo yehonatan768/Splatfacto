@@ -1,0 +1,13 @@
+# Smart extraction for aerial/drone videos
+ffmpeg:
+  fps: 3.0                 # base fps (smart selection still happens after)
+  scale_max_width: 2048
+  quality_qv: 2            # -q:v (jpeg quality)
+  loglevel: info
+
+smart_select:
+  enabled: true
+  max_frames: 600          # cap final frames to keep COLMAP robust
+  min_sharpness: 10.0      # variance proxy threshold (higher => stricter)
+  keep_every_n_after_filter: 1
+  min_hist_delta: 0.012    # reject near-duplicates (0..1), higher => more aggressive
