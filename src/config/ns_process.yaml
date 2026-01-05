@@ -1,6 +1,4 @@
 ns_process:
-  # IMPORTANT: do not downscale while troubleshooting aerial registration
   num_downscales: 0
-
-  # sequential | vocab_tree | exhaustive (depends on your ns-process-data version)
   matching_method: sequential
+

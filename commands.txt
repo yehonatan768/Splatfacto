@@ -21,11 +21,19 @@ ns-export --help
 python -c "import torch; print('torch:', torch.__version__); print('cuda available:', torch.cuda.is_available()); print('device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)"
 
 
-python -m src.cli extract --video dji0004.mp4 --ver v0001
-python -m src.cli sfm --exp dji0004 --ver v0001
-python -m src.cli ns --exp dji0004 --ver v0001
-python -m src.cli train --exp dji0004 --ver v0001
-python -m src.cli train --exp dji0004 --ver v0001
-python -m src.cli export-splat --exp dji0004 --ver v0001
-python -m src.cli export-splat --exp dji0004 --ver v0001
-python -m src.cli export-pc --exp dji0004 --ver v0001
+# 1) Extract smart frames (creates experiments/<exp>/<ver>/frames)
+python -m src.cli --exp dji0004 --ver v0001 extract --video dji0004.mp4
+
+# 2) Create nerfstudio dataset (ns-process-data images)
+python -m src.cli --exp dji0004 --ver v0001 process
+
+# 3) Train splatfacto
+python -m src.cli --exp dji0004 --ver v0001 train
+
+# 4) Export gaussian splat
+python -m src.cli --exp dji0004 --ver v0001 export
+
+or
+
+python -m src.cli --exp dji0004 --ver v0003 all --video dji0004.mp4
+
